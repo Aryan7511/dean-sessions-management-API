@@ -36,10 +36,17 @@ export const postStudentSignup = async (req, res, next) => {
   }
 };
 
-export const getFreeSlot = async (req, res, next) => {
+export const FreeSlot = async (req, res, next) => {
   //we are limiting the threshold slots which are free to be 6
+  const { token } = req.body; // it will be student token
   const threshold = 6;
   try {
+    //  check whether the token is valid or not
+    const stdt = await Student.findOne({ token });
+    if (!stdt) {
+      // if token is not valid
+      return res.status(409).json({ message: "token is not valid a token" });
+    }
     //find how many deans exist
     const totalDeans = await Dean.find().countDocuments();
     console.log(totalDeans);
@@ -94,6 +101,7 @@ export const getFreeSlot = async (req, res, next) => {
         const availableDeans = await Dean.find(condition);
         const date = getDate(slotObj.slot);
         const time = getTime(slotObj.slot);
+        const dayOfWeek = getDayOfWeek(slotObj.slot);
         const filteredDeans = availableDeans.map((dean) => {
           return {
             name: dean.name,
@@ -103,13 +111,14 @@ export const getFreeSlot = async (req, res, next) => {
         return {
           "Slot-Time": time,
           "Slot-Date": date,
+          dayOfWeek: dayOfWeek,
           "Slot-ID": slotObj._id,
           "Available Deans": filteredDeans,
         };
       })
     );
 
-    res.status(201).json({ ...modifiedFreeSlots });
+    return res.status(201).json({ ...modifiedFreeSlots });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error" });
@@ -193,6 +202,21 @@ const getTime = (date) => {
   return `${hours - 12}:00 PM`;
 };
 
+const getDayOfWeek = (date) => {
+  const dayOfWeek = date.getDay();
+  const daysOfWeek = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
+  const dayName = daysOfWeek[dayOfWeek];
+  return dayName;
+};
+
 export const postBookSlot = async (req, res, next) => {
   const { deanUniversityId, slotId, token } = req.body;
   try {
@@ -200,12 +224,14 @@ export const postBookSlot = async (req, res, next) => {
     const std = await Student.findOne({ token });
     if (!std) {
       //if such student does not exist
-     return res.status(400).json({ message: "Token is not valid" });
+      return res.status(400).json({ message: "Token is not valid" });
     }
     //now checking whether the dean university id is correct or not
     const dean = await Dean.findOne({ universityId: deanUniversityId });
     if (!dean) {
-     return res.status(400).json({ message: "dean university Id is not a valid Id" });
+      return res
+        .status(400)
+        .json({ message: "dean university Id is not a valid Id" });
     }
     // checking whether the slot is already booked by some other student or not
     // if it is booked already then in that case booking can't be done
@@ -215,26 +241,24 @@ export const postBookSlot = async (req, res, next) => {
     const currentDate = new Date();
 
     if (currentDate > slot.slot) {
-     return res
-        .status(409)
-        .json({
-          message: "Unfortunately, the slot time has expired.",
-        });
+      return res.status(409).json({
+        message: "Unfortunately, the slot time has expired.",
+      });
     }
 
     if (isPresent) {
       // it means dean is not available
-     return res
-        .status(409)
-        .json({
-          message: "Slot is already booked. Sorry for the inconvenience",
-        });
+      return res.status(409).json({
+        message: "Slot is already booked. Sorry for the inconvenience",
+      });
     }
 
     //now creating a session
     const session = new Session({
       deanId: deanUniversityId,
+      deanName: dean.name,
       studentId: std.universityId,
+      studentName: std.name,
       slot: slotId,
     });
     const savedSession = await session.save();
@@ -250,9 +274,47 @@ export const postBookSlot = async (req, res, next) => {
     slot.booked.push(dean._id);
     await slot.save();
 
-   return res
+    return res
       .status(200)
       .json({ message: "Your slot booking has been successfully completed!" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const upcomingSessions = async (req, res, next) => {
+  try {
+    const { token } = req.body;
+    const currentDate = new Date();
+    //check whether it's valid token or not
+    const student = await Student.findOne({ token }).populate({
+      path: "sessions",
+      select: "deanId deanName",
+      populate: { path: "slot", select: "slot" },
+    });
+
+    if (!student) {
+      // if no such student exists
+      return res.status(404).json({ message: "Token is not a valid token" });
+    }
+    // console.log(student);
+
+    const upcomingSessionssss = student.sessions
+      .filter((session) => session.slot.slot > currentDate)
+      .map((session) => {
+        const time = getTime(session.slot.slot);
+        const date = getDate(session.slot.slot);
+        const dayOfWeek = getDayOfWeek(session.slot.slot);
+        return {
+          "Dean Name": session.deanName,
+          "Dean ID": session.deanId,
+          Time: time,
+          dayOfWeek: dayOfWeek,
+          Date: date,
+        };
+      });
+    return res.status(200).json({ ...upcomingSessionssss });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error" });

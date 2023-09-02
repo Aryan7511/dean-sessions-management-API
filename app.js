@@ -2,14 +2,14 @@ import express from "express";
 import bodyParser from "body-parser";
 import mongoose from "mongoose";
 import cors from "cors";
-
+import dotenv from "dotenv";
 import studentRoutes from "./routes/student.js";
 import deanRoutes from "./routes/dean.js";
 
+dotenv.config();
 const app = express();
 
 // app.use("/posts", postRoutes);
-
 app.use(bodyParser.json({ limit: "30mb", extended: true }));
 app.use(bodyParser.urlencoded({ limit: "30mb", extended: true }));
 /*: This line applies the cors middleware to your application, allowing it to handle cross-origin requests properly. 
@@ -19,10 +19,9 @@ app.use(cors());
 app.use("/student", studentRoutes);
 app.use("/dean",deanRoutes);
 
-const CONNECTION_URL =
-  "mongodb+srv://Aryan:S4vbvmDOdNVUghgm@cluster0.zcxuv2e.mongodb.net/";
+const CONNECTION_URL = process.env.CONNECTION_URL;
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 (async () => {
   try {
