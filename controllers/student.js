@@ -68,14 +68,13 @@ export const FreeSlot = async (req, res, next) => {
     // console.log(validSlots);
     const countOfFreeSlot = threshold - validSlots.length;
     console.log(countOfFreeSlot);
-
     let createdSlots = [];
     if (validSlots.length > 0 && countOfFreeSlot != 0) {
       createdSlots = getSlots(
         countOfFreeSlot,
         new Date(validSlots[validSlots.length - 1].slot)
       );
-    } else {
+    } else if(countOfFreeSlot>0) {
       createdSlots = getSlots(countOfFreeSlot);
     }
 
