@@ -1,14 +1,12 @@
-import Student from "../models/Student.js";
 import Slot from "../models/Slot.js";
 import { v4 as uuidv4 } from "uuid";
-import Dean from "../models/Dean.js";
-import Session from "../models/Session.js";
+import User from "../models/User.js";
 
 export const postStudentSignup = async (req, res, next) => {
   const { universityId, password, name } = req.body;
   try {
     // Find the student in the database based on universityId
-    const std = await Student.findOne({ universityId });
+    const std = await User.findOne({ universityId, userType: "Student" });
 
     //if student exists already in the database
     if (std) {
@@ -19,14 +17,15 @@ export const postStudentSignup = async (req, res, next) => {
 
     // Generate a unique token (UUID) and store it in the database
     const token = uuidv4();
-    const student = new Student({
+    const student = new User({
       universityId: universityId,
       password: password,
       name: name,
       token: token,
+      userType: "Student",
+      sessions: [],
     });
     const savedStudent = await student.save();
-
     res
       .status(201)
       .json({ message: "Student Created Succefully", token: token });
@@ -42,13 +41,13 @@ export const FreeSlot = async (req, res, next) => {
   const threshold = 6;
   try {
     //  check whether the token is valid or not
-    const stdt = await Student.findOne({ token });
+    const stdt = await User.findOne({ token, userType: "Student" });
     if (!stdt) {
       // if token is not valid
-      return res.status(409).json({ message: "token is not valid a token" });
+      return res.status(409).json({ message: "token is not valid" });
     }
     //find how many deans exist
-    const totalDeans = await Dean.find().countDocuments();
+    const totalDeans = await User.countDocuments({ userType: "Dean" });
     console.log(totalDeans);
 
     //fetching all valid free slots from database
@@ -74,7 +73,7 @@ export const FreeSlot = async (req, res, next) => {
         countOfFreeSlot,
         new Date(validSlots[validSlots.length - 1].slot)
       );
-    } else if(countOfFreeSlot>0) {
+    } else if (countOfFreeSlot > 0) {
       createdSlots = getSlots(countOfFreeSlot);
     }
 
@@ -96,8 +95,9 @@ export const FreeSlot = async (req, res, next) => {
         const deanIdsToExclude = slotObj.booked;
         const condition = {
           _id: { $nin: deanIdsToExclude }, // Exclude documents with these dean IDs
+          userType: "Dean", // Filter by userType "Dean"
         };
-        const availableDeans = await Dean.find(condition);
+        const availableDeans = await User.find(condition);
         const date = getDate(slotObj.slot);
         const time = getTime(slotObj.slot);
         const dayOfWeek = getDayOfWeek(slotObj.slot);
@@ -220,13 +220,16 @@ export const postBookSlot = async (req, res, next) => {
   const { deanUniversityId, slotId, token } = req.body;
   try {
     //verifying the student with it's token whether it is valid student or not
-    const std = await Student.findOne({ token });
+    const std = await User.findOne({ token, userType: "Student" });
     if (!std) {
       //if such student does not exist
       return res.status(400).json({ message: "Token is not valid" });
     }
     //now checking whether the dean university id is correct or not
-    const dean = await Dean.findOne({ universityId: deanUniversityId });
+    const dean = await User.findOne({
+      universityId: deanUniversityId,
+      userType: "Dean",
+    });
     if (!dean) {
       return res
         .status(400)
@@ -253,20 +256,24 @@ export const postBookSlot = async (req, res, next) => {
     }
 
     //now creating a session
-    const session = new Session({
-      deanId: deanUniversityId,
-      deanName: dean.name,
-      studentId: std.universityId,
-      studentName: std.name,
+
+    const stdSession = {
+      userId: deanUniversityId,
+      userName: dean.name,
       slot: slotId,
-    });
-    const savedSession = await session.save();
+    };
+    const deanSession = {
+      userId: std.universityId,
+      userName: std.name,
+      slot: slotId,
+    };
+
     //now storing created Session id in the student and dean document
-    std.sessions.push(savedSession._id);
+    std.sessions.push(stdSession);
     await std.save();
 
     //now storing created Session id in the student and dean document
-    dean.sessions.push(savedSession._id);
+    dean.sessions.push(deanSession);
     await dean.save();
 
     //now updating the booked field of slot
@@ -287,10 +294,9 @@ export const upcomingSessions = async (req, res, next) => {
     const { token } = req.body;
     const currentDate = new Date();
     //check whether it's valid token or not
-    const student = await Student.findOne({ token }).populate({
-      path: "sessions",
-      select: "deanId deanName",
-      populate: { path: "slot", select: "slot" },
+    const student = await User.findOne({ token, userType: "Student" }).populate({
+      path: "sessions.slot",
+      model: "Slot",
     });
 
     if (!student) {
@@ -306,8 +312,8 @@ export const upcomingSessions = async (req, res, next) => {
         const date = getDate(session.slot.slot);
         const dayOfWeek = getDayOfWeek(session.slot.slot);
         return {
-          "Dean Name": session.deanName,
-          "Dean ID": session.deanId,
+          "Dean Name": session.userName,
+          "Dean ID": session.userId,
           Time: time,
           dayOfWeek: dayOfWeek,
           Date: date,

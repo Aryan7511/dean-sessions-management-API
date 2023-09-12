@@ -1,11 +1,11 @@
-import Dean from "../models/Dean.js";
 import { v4 as uuidv4 } from "uuid";
+import User from "../models/User.js";
 
 export const postDeanSignup = async (req, res, next) => {
   const { universityId, password, name } = req.body;
   try {
     // Find the student in the database based on universityId
-    const dn = await Dean.findOne({ universityId });
+    const dn = await User.findOne({ universityId, userType: "Dean" });
 
     //if student exists already in the database
     if (dn) {
@@ -16,11 +16,13 @@ export const postDeanSignup = async (req, res, next) => {
 
     // Generate a unique token (UUID) and store it in the database
     const token = uuidv4();
-    const dean = new Dean({
+    const dean = new User({
       universityId: universityId,
       password: password,
       name: name,
       token: token,
+      userType: "Dean",
+      sessions: [],
     });
     const savedean = await dean.save();
 
@@ -36,13 +38,9 @@ export const deanPendingSessions = async (req, res, next) => {
     const { token } = req.body;
     const currentDate = new Date();
     //check whether it's valid token or not
-    const dean = await Dean.findOne({ token }).populate({
-      path: "sessions",
-      select: "studentId studentName",
-      populate: {
-        path: "slot",
-        select: "slot",
-      },
+    const dean = await User.findOne({ token, userType: "Dean" }).populate({
+      path: "sessions.slot",
+      model: "Slot",
     });
 
     // console.log(dean);
@@ -59,15 +57,15 @@ export const deanPendingSessions = async (req, res, next) => {
         const date = getDate(session.slot.slot);
         const dayOfWeek = getDayOfWeek(session.slot.slot);
         return {
-          "Student Name": session.studentName,
-          "Student ID": session.studentId,
+          "Student Name": session.userName,
+          "Student ID": session.userId,
           Time: time,
           dayOfWeek: dayOfWeek,
           Date: date,
         };
       });
 
-    // console.log(validpendingSessions);
+    console.log(validpendingSessions);
     return res.status(200).json({ ...validpendingSessions });
   } catch (error) {
     console.error(error);
